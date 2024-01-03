@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>共享剪贴板</title>
+<link rel="icon" type="image/svg+xml" href="copy.svg">
+<style>
+  body {
+    background: linear-gradient(to right, #5e66b2, #6dc5ed);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+  }
+  .container {
+    width: 40%;
+  }
+  h1 {
+    text-align: center;
+    color: #333;
+  }
+  .box {
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 10px;
+    padding: 20px;
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 20px;
+    position: relative; /* For absolute positioning of copy button */
+  }
+  textarea {
+    width: calc(100% - 20px);
+    height: 160px;
+    margin-top: 10px;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 5px;
+    border: none;
+    padding: 10px;
+    box-sizing: border-box;
+  }
+  .id-display {
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 5px;
+    padding: 0 10px;
+    margin-left: 16px;
+    height: 40px;
+    display: inline-block;
+    line-height: 40px;
+    min-width: 100px;
+    text-align: center;
+  }
+  .flex {
+    display: flex;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .flex span,
+  .flex input {
+    font-size: larger;
+  }
+  .id-label {
+    font-size: larger;
+    margin-right: 8px;
+    margin-left: 8px;
+  }
+  .copy-icon {
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    margin-left: 8px;
+  }
+  .button {
+    cursor: pointer;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    background-color: rgba(0, 123, 255, 0.5);
+    color: white;
+    font-size: larger;
+    margin-left: auto;
+    margin-right: 5%;
+  }
+  .button.green {
+    background-color: #28a745;
+  }
+  .button.red {
+    background-color: #dc3545;
+  }
+  .notification {
+    display: none;
+    position: fixed;
+    z-index: 2;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #ddd;
+    padding: 10px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
+  #box3 {
+    position: relative;
+  }
+  #retrieve-content-copy {
+    position: absolute;
+    top: 80%;
+    right: 10%;
+  }
+
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>共享剪贴板</h1>
+    <div class="box" id="box2">
+      <h2>上传内容</h2>
+      <textarea id="upload-content"></textarea>
+      <div class="flex">
+        <span class="id-label">ID:</span>
+        <div class="id-display" id="upload-content-id"></div>
+        <img src="copy.svg" alt="Copy" class="copy-icon" id="upload-content-id-copy">
+        <button class="button" id="upload-button">上传</button>
+      </div>
+    </div>
+    <div class="box" id="box3">
+      <h2>获取内容</h2>
+      <div class="flex">
+        <span class="id-label">ID:</span>
+        <input type="text" id="retrieve-content-id" style="background: rgba(255, 255, 255, 0.5); border-radius: 5px; height: 35px; width: 90px; padding: 0 10px; margin-left: 16px;">
+        <button class="button" id="retrieve-button">获取</button>
+      </div>
+      <textarea id="retrieve-content-display" readonly></textarea>
+      <img src="copy.svg" alt="Copy" class="copy-icon" id="retrieve-content-copy">
+    </div>
+  </div>
+
+  <!-- The Notification -->
+  <div id="notification" class="notification"></div>
+
+<script>
+  // JavaScript logic
+  document.getElementById('upload-button').onclick = function() {
+    let content = document.getElementById('upload-content').value;
+    let uploadId = document.getElementById('upload-content-id').textContent || 'new';
+    let path = `/api/${uploadId === 'new' ? 'new' : uploadId}`;
+    let fresh = false
+
+    fetch(path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain'
+      },
+      body: content
+    })
+    .then(response => {
+      if (!response.ok && response.status === 404 && uploadId !== 'new') {
+        fresh = true
+        // Retry with new ID if previous ID was not 'new' and error was 404
+        return fetch('/api/new', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'text/plain'
+          },
+          body: content
+        })
+        .then(newResponse => newResponse.text());
+      } else if (response.ok) {
+        fresh = false
+        return response.text();
+      } else {
+        throw new Error('Upload failed');
+      }
+    })
+    .then(id => {
+      if (uploadId === 'new' || fresh) {
+        document.getElementById('upload-content-id').textContent = id;
+      }
+      showNotification('上传成功');
+      this.classList.remove('red');
+      this.classList.add('green');
+    })
+    .catch(error => {
+      showNotification('上传失败: ' + error.message);
+      this.classList.remove('green');
+      this.classList.add('red');
+    });
+  };
+
+  document.getElementById('retrieve-button').onclick = function() {
+    let retrieveId = document.getElementById('retrieve-content-id').value;
+    fetch(`/api/${retrieveId}`)
+    .then(response => {
+      if (response.ok) {
+        return response.text();
+      } else {
+        throw new Error('Retrieve failed');
+      }
+    })
+    .then(content => {
+      document.getElementById('retrieve-content-display').value = content;
+      showNotification('获取成功!');
+      this.classList.remove('red');
+      this.classList.add('green');
+    })
+    .catch(error => {
+      showNotification('获取失败: ' + error.message);
+      this.classList.remove('green');
+      this.classList.add('red');
+    });
+  };
+
+  // Copy content ID to clipboard
+  document.getElementById('upload-content-id-copy').onclick = function() {
+    let contentId = document.getElementById('upload-content-id').textContent;
+    if (contentId) {
+      if (navigator.clipboard && window.isSecureContext) {
+        // navigator clipboard 向剪贴板写文本
+        navigator.clipboard.writeText(contentId).then(function() {
+          showNotification('复制成功!');
+        }, function(err) {
+          showNotification('复制失败: ' + err);
+        });
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = contentId;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showNotification('复制成功!');
+      }
+    }
+  };
+
+  // Copy retrieved content to clipboard
+  document.getElementById('retrieve-content-copy').onclick = function() {
+    let content = document.getElementById('retrieve-content-display').value;
+    if (content) {
+      if (navigator.clipboard && window.isSecureContext) {
+        // navigator clipboard 向剪贴板写文本
+        navigator.clipboard.writeText(content).then(function() {
+          showNotification('复制成功!');
+        }, function(err) {
+          showNotification('复制失败: ' + err);
+        });
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = content;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showNotification('复制成功!');
+      }
+    }
+  };
+
+  // Notification
+  function showNotification(message) {
+    let notification = document.getElementById('notification');
+    notification.textContent = message;
+    notification.style.display = 'block';
+
+    setTimeout(() => {
+      notification.style.display = 'none';
+    }, 2000);
+  }
+</script>
+</body>
+</html>
